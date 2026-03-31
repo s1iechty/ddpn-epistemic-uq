@@ -24,6 +24,7 @@ from deep_uncertainty.models import GaussianNN
 from deep_uncertainty.models import LogFaithfulGaussianNN
 from deep_uncertainty.models import LogGaussianNN
 from deep_uncertainty.models import NaturalGaussianNN
+from deep_uncertainty.models.bayesian_uq.vi_nn import VI_DoublePoissonNN
 from deep_uncertainty.models import NegBinomNN
 from deep_uncertainty.models import PoissonNN
 from deep_uncertainty.models.backbones import DistilBert
@@ -88,7 +89,13 @@ def get_model(config: TrainingConfig, return_initializer: bool = False) -> Discr
             initializer = DoublePoissonHomoscedasticNN
     elif config.head_type in (HeadType.NEGATIVE_BINOMIAL, HeadType.NEGATIVE_BINOMIAL_GLM):
         initializer = NegBinomNN
-
+    elif config.head_type == HeadType.VI_DOUBLE_POISSON: # Added by Sam Liechty
+        initializer = partialclass( # Added by Sam Liechty
+            VI_DoublePoissonNN, # Added by Sam Liechty
+            n_data=config.n_data, # Added by Sam Liechty
+            build_params=config.build_params, # Added by Sam Liechty
+        ) # Added by Sam Liechty
+        
     if config.dataset_type == DatasetType.TABULAR:
         if config.head_type in (
             HeadType.POISSON_GLM,

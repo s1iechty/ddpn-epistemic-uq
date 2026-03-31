@@ -12,6 +12,19 @@ from deep_uncertainty.utils.configs import TrainingConfig
 from deep_uncertainty.utils.experiment_utils import get_datamodule
 from deep_uncertainty.utils.experiment_utils import get_model
 
+# 3/4/26
+# PyTorch 2.6 blocks custom classes from loading in checkpoints by default,
+# this whitelists them so the checkpoint can be loaded - Added by Sam Liechty 3/4/26
+import torch
+from posteriors.vi.diag import VIDiagState
+from deep_uncertainty.models.backbones import MLP
+from deep_uncertainty.enums import OptimizerType, LRSchedulerType, BetaSchedulerType, AcceleratorType, HeadType, DatasetType
+from tensordict._reductions import _make_td
+from tensordict._td import TensorDict
+from tensordict.tensorclass import NonTensorData
+from torchopt.transform.scale_by_adam import ScaleByAdamState
+from torchopt.base import EmptyState
+torch.serialization.add_safe_globals([MLP, OptimizerType, LRSchedulerType, BetaSchedulerType, AcceleratorType, HeadType, DatasetType, VIDiagState, _make_td, TensorDict, NonTensorData, ScaleByAdamState, EmptyState])
 
 def main(log_dir: Path, config_path: Path, chkp_path: Path):
 

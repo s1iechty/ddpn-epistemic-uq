@@ -30,10 +30,13 @@ class DoublePoissonBayesianNN(DoublePoissonNN):
 
     def functional(self, params: Dict[str, torch.Tensor], x: torch.Tensor) -> torch.Tensor:
         """A stateless functional call to the model, required by 'posteriors'."""
-        return torch.func.functional_call(self, params, (x,))
+        return torch.func.functional_call(self, params, (x,), kwargs={'force_standard': True})
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._predict_impl(x)
+    def forward(self, x: torch.Tensor, force_standard: bool = False) -> torch.Tensor:
+        if self.training or force_standard:
+            return super().forward(x)
+        else:
+            return self._predict_impl(x)
 
     def _predict_impl(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -42,12 +45,14 @@ class DoublePoissonBayesianNN(DoublePoissonNN):
         self.eval()
         outputs = []
 
+        device = next(self.parameters()).device
         with torch.no_grad():
-            for _ in range(self.num_mc_samples):
-                params = self._sample_parameters()
+            for i in range(self.num_mc_samples):
+                params = self._sample_parameters(i)
                 
                 if params is not None:
                     # Functional call using sampled weights
+                    params = {k: v.to(device) for k, v in params.items()}
                     y_hat = self.functional(params, x)
                 else:
                     # Fallback for methods like MC Dropout
@@ -72,7 +77,7 @@ class DoublePoissonBayesianNN(DoublePoissonNN):
         pass
 
     @abstractmethod
-    def _sample_parameters(self) -> Optional[Dict[str, torch.Tensor]]:
+    def _sample_parameters(self, i: int = None) -> Optional[Dict[str, torch.Tensor]]:
         """
         Draw one set of weights from the posterior distribution.
         """
@@ -91,5 +96,5 @@ class DoublePoissonBayesianNN(DoublePoissonNN):
         In manual optimization, we still return an optimizer for Lightning 
         internals, even if the 'posteriors' transform wraps it.
         """
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        return []
     

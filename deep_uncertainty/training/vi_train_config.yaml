@@ -1,0 +1,39 @@
+experiment_name: vi-double-poisson-run-2
+random_seed: 42
+head_type: vi_double_poisson
+dataset:
+  type: tabular
+  spec: /home/ra-ugrad/length-of-stay/length_of_stay.npz
+  input_dim: 35
+training:
+  accelerator: gpu
+  batch_size: 32
+  n_data: 80000
+  build_params:
+    optimizer_lr: 0.0005
+    init_log_sds: -7.0
+    temperature: 0.1
+  beta_scheduler:
+    type: cosine_annealing
+    kwargs:
+      beta_0: 1.0
+      beta_1: 1.0
+      last_epoch: -1
+  freeze_backbone: False
+  chkp_dir: checkpoints
+  chkp_freq: 10
+  num_epochs: 50
+  optimizer:
+    type: adam_w
+    kwargs:
+      lr: 0.0005
+      weight_decay: 0.00001
+  lr_scheduler:
+    type: cosine_annealing
+    kwargs:
+      T_max: 100
+      eta_min: 0
+      last_epoch: -1
+evaluation:
+  num_trials: 1
+  log_dir: logs

@@ -20,6 +20,10 @@ class HeadType(Enum):
     FAITHFUL_GAUSSIAN = "faithful_gaussian"
     LOG_FAITHFUL_GAUSSIAN = "log_faithful_gaussian"
     NATURAL_GAUSSIAN = "natural_gaussian"
+    VI_DOUBLE_POISSON = "vi_double_poisson"
+
+
+
 
 
 class OptimizerType(Enum):

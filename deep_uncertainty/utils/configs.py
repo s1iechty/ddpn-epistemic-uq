@@ -70,7 +70,9 @@ class TrainingConfig:
         hidden_dim: int = 64,
         precision: str | None = None,
         random_seed: int | None = None,
-        freeze_backbone: bool = False
+        freeze_backbone: bool = False,
+        n_data: int | None = None, # Added by Sam Liechty
+        build_params: dict | None = None # Added by Sam Liechty
     ):
         self.experiment_name = experiment_name
         self.accelerator_type = accelerator_type
@@ -96,6 +98,8 @@ class TrainingConfig:
         self.precision = precision
         self.random_seed = random_seed
         self.freeze_backbone = freeze_backbone
+        self.n_data = n_data # Added by Sam Liechty
+        self.build_params = build_params # Added by Sam Liechty
 
     @staticmethod
     def from_yaml(config_path: str | Path) -> TrainingConfig:
@@ -153,7 +157,12 @@ class TrainingConfig:
         hidden_dim = config_dict.get("hidden_dim", 64)
         random_seed = config_dict.get("random_seed")
         freeze_backbone = config_dict['training'].get("freeze_backbone", False)
-
+        
+        n_data = None # Added by Sam Liechty
+        build_params = None # Added by Sam Liechty
+        if head_type == HeadType.VI_DOUBLE_POISSON: # Added by Sam Liechty
+            n_data = training_dict["n_data"] # Added by Sam Liechty
+            build_params = training_dict["build_params"] # Added by Sam Liechty
         return TrainingConfig(
             experiment_name=experiment_name,
             accelerator_type=accelerator_type,
@@ -178,7 +187,9 @@ class TrainingConfig:
             hidden_dim=hidden_dim,
             precision=precision,
             random_seed=random_seed,
-            freeze_backbone=freeze_backbone
+            freeze_backbone=freeze_backbone,
+            n_data=n_data, # Added by Sam Liechty
+            build_params=build_params # Added by Sam Liechty
         )
 
     def to_yaml(self, filepath: str | Path):

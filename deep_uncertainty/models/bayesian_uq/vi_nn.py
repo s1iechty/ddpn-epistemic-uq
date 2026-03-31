@@ -36,16 +36,44 @@ class VI_DoublePoissonNN(DoublePoissonBayesianNN): # :)
         """
         Subclasses must define the 'posteriors' transform (VI, Laplace, etc.)
         and initialize self.posterior_state here.
+        
+        Changes on 3/4/26:
+        posteriors.vi.diag.build() expects a real Python optimizer object 
+        (like torchopt.adam(lr=0.001)) as its optimizer argument, but your yaml 
+        file can only store plain values like numbers and strings — so you need to 
+        construct the optimizer object in code from the optimizer_lr number before passing it in.
         """
+        optimizer_lr = self.build_params.get("optimizer_lr", 0.001) # 3/4/26
+        build_kwargs = {
+            "optimizer": torchopt.adam(lr=optimizer_lr),
+            "init_log_sds": self.build_params["init_log_sds"],
+            "temperature": self.build_params["temperature"],
+        } # 3/4/26
 
         # Initiate the VI posterior transform :)
-        self.posterior_transform = posteriors.vi.diag.build(self._log_posterior, **self.build_params) # build_params must be optimizer=torchopt.adam(lr=0.001), init_log_sds=-7, temperature=.1
-        
+        #self.posterior_transform = posteriors.vi.diag.build(self._log_posterior, **self.build_params) # build_params must be optimizer=torchopt.adam(lr=0.001), init_log_sds=-7, temperature=.1
+        self.posterior_transform = posteriors.vi.diag.build(self._log_posterior, **build_kwargs)
+
         # Initialize the posterior state
         params = dict(self.named_parameters()) # :) Get the model parameters, current weights, as a dict for the posterior transform
         self.posterior_state = self.posterior_transform.init(params) # :) Create starting posterior state, vi_state = vi_transform.init(params) in colab, is the same
-        
-
+    
+    # 3/4/26. b start - Added these checkpoint hooks to save and restore the posterior state since Lightning doesn't do that automatically for custom attributes like posterior_state
+    def on_save_checkpoint(self, checkpoint):
+        if self.posterior_state is not None:
+            checkpoint["posterior_params"] = {k: v.detach().cpu() for k, v in self.posterior_state.params.items()}
+            checkpoint["posterior_log_sd_diag"] = {k: v.detach().cpu() for k, v in self.posterior_state.log_sd_diag.items()}
+    
+    def on_load_checkpoint(self, checkpoint):
+        # Restore posterior_state when loading from checkpoint - Added by Sam Liechty 3/4/26
+        self.init_posterior()
+        if "posterior_params" in checkpoint:
+            self.posterior_state = self.posterior_state.replace(
+                params={k: v for k, v in checkpoint["posterior_params"].items()},
+                log_sd_diag={k: v for k, v in checkpoint["posterior_log_sd_diag"].items()}
+             )
+    # 3/4/26. b end - Added these checkpoint hooks to save and restore the posterior state since Lightning doesn't do that automatically for custom attributes like posterior_state
+    
     # :)
     def training_step(self, batch: Any): #, batch_idx: int): 
 
@@ -65,116 +93,17 @@ class VI_DoublePoissonNN(DoublePoissonBayesianNN): # :)
         return None
     
     
-    def _sample_parameters(self) -> Optional[Dict[str, torch.Tensor]]: # :)
-        # For VI, we sample from the variational distribution defined by the current posterior state.
-        if self.posterior_state is None: # :)
-            return None
-        # Draw one set of weights from the variational posterior distribution
-        return posteriors.vi.diag.sample(self.posterior_state) # :) Same as Colab
+    def _sample_parameters(self, i: int = 0) -> Optional[Dict[str, torch.Tensor]]:
+        if self.posterior_state is None:
+            raise ValueError("Posterior state is not initialized.")
+        params = {}
+        for k in self.posterior_state.params.keys():
+            mean = self.posterior_state.params[k]
+            log_sd = self.posterior_state.log_sd_diag[k]
+            params[k] = mean + torch.exp(log_sd) * torch.randn_like(mean)
+        return params
     
-    # Training, train model takes in config file, Deep Uncertainy -> evaluation -> get train_model.py (READ ME HAS INSTRUCTIONS ON HOW TO DO THIS) specify chekpoint outpoint folder eval_model.py and then training, want a training config file  
+    def on_fit_start(self):
+        # Initialize the posterior state at the start of training
+        self.init_posterior()
 
-# TESTING VI
-# "python -m deep_uncertainty.models.bayesian_uq.vi_nn" to run the code
-if __name__ == "__main__":
-    print("Script Started")
-    import matplotlib.pyplot as plt
-    from torch.utils.data import TensorDataset, DataLoader
-    import numpy as np
-    
-    # -----------------------------------
-    # 1. Generate toy data
-    # -----------------------------------
-
-    torch.manual_seed(42)
-
-    n_points = 400
-
-    x_all = torch.rand(n_points) * 10 - 3  # range [-3, 7]
-
-
-    mask_outside = (x_all < 0) | (x_all > 2)
-    x_train_outside = x_all[mask_outside]
-
-    mask_inside = (x_all >= 0) & (x_all <= 2)
-    x_train_inside = x_all[mask_inside][::5]
-
-
-    x_train = torch.cat([x_train_outside, x_train_inside]).unsqueeze(1)
-
-    lambda_x_all = torch.exp(0.7 * x_all - 0.05 * x_all**2 + 1.0)
-    lambda_x_train = torch.exp(0.7 * x_train - 0.05 * x_train**2 + 1.0)
-
-    y_all = torch.poisson(lambda_x_all)
-    y_train = torch.poisson(lambda_x_train)
-
-
-    fig, axes = plt.subplots(1,2, figsize=(14, 4))
-    axes[0].scatter(x_train.numpy(), y_train.numpy(), alpha=0.6)
-    axes[0].set_xlabel('x')
-    axes[0].set_ylabel('count y')
-    axes[0].set_title('Training Data')
-
-    axes[1].scatter(x_all.numpy(), y_all.numpy(), alpha=0.6)
-    axes[1].set_xlabel('x')
-    axes[1].set_ylabel('count')
-    axes[1].set_title('All Data')
-    # Use blocking show so the window remains until the user closes it
-    plt.show()
-
-    # -----------------------------------
-    # 2. Create DataLoader
-    # -----------------------------------
-
-    dataset = TensorDataset(x_train, y_train)
-    batch_size = 32
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    
-    print("DataLoader created with batch size:", batch_size)
-
-    # -----------------------------------
-    # 3. Instantiate the model
-    # -----------------------------------
-    
-    build_params = {
-        "optimizer": torchopt.adam(lr=0.001),
-        "init_log_sds": -7.0,
-        "temperature": 0.1
-    }
-
-    model = VI_DoublePoissonNN(
-        n_data=len(x_train),
-        build_params=build_params,
-        # passed up to DoublePoissonNN via **kwargs
-        backbone_type=MLP,
-        backbone_kwargs={"input_dim": 1, "output_dim": 64},
-        optim_type=OptimizerType.ADAM,
-        optim_kwargs={"lr": 0.001},
-        )
-    
-    print("Model instantiated with VI posterior.")
-   
-    # Ok I pray to God that that worked, now the next step
-
-    #------------------------------------
-    # 4. How to Train Your Model
-    #------------------------------------
-    from tqdm import tqdm
-
-    model.train()
-    nelbos = []
-
-    for epoch in tqdm(range(400)):
-        for batch in loader:
-            model.training_step(batch)
-            nelbos.append(model.posterior_state.nelbo.item())
-
-    print("Training complete")
-
-    # Plot the NELBO to check it's decreasing
-    import matplotlib.pyplot as plt
-    plt.plot(nelbos)
-    plt.xlabel("Step")
-    plt.ylabel("Negative ELBO")
-    plt.title("VI Training Loss")
-    plt.show()

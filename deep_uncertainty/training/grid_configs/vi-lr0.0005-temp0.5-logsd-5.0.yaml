@@ -1,0 +1,39 @@
+dataset:
+  input_dim: 35
+  spec: /home/ra-ugrad/length-of-stay/length_of_stay.npz
+  type: tabular
+evaluation:
+  log_dir: logs
+  num_trials: 1
+experiment_name: vi-lr0.0005-temp0.5-logsd-5.0
+head_type: vi_double_poisson
+random_seed: 42
+training:
+  accelerator: gpu
+  batch_size: 32
+  beta_scheduler:
+    kwargs:
+      beta_0: 1.0
+      beta_1: 1.0
+      last_epoch: -1
+    type: cosine_annealing
+  build_params:
+    init_log_sds: -5.0
+    optimizer_lr: 0.0005
+    temperature: 0.5
+  chkp_dir: checkpoints
+  chkp_freq: 10
+  freeze_backbone: false
+  lr_scheduler:
+    kwargs:
+      T_max: 100
+      eta_min: 0
+      last_epoch: -1
+    type: cosine_annealing
+  n_data: 80000
+  num_epochs: 5
+  optimizer:
+    kwargs:
+      lr: 0.0005
+      weight_decay: 9.0e-05
+    type: adam_w
